@@ -44,20 +44,32 @@ contract UniversalSigValidator {
 
     // Try ERC-1271 verification
     if (isCounterfactual || contractCodeLen > 0) {
-      try IERC1271Wallet(_signer).isValidSignature(_hash, sigToValidate) returns (bytes4 magicValue) {
-        bool isValid = magicValue == ERC1271_SUCCESS;
+      (bool success, bytes memory result) = _signer.staticcall(
+        abi.encodeWithSelector(
+          ERC1271_SUCCESS, // function selector for isValidSignature, it's the same as success
+          _hash,
+          sigToValidate
+        )
+      );
 
+      // @no-reverts
+      // if the call is a success (did not revert)
+      // and isValidSignature returned a valid result, return the res to the UI
+      // However, if the contract reverted or it does not implement the method,
+      // fallback to ecrecover as it might be an EOA that has a hacked
+      // delegation but ecrecover should be working for
+      if (success && result.length == 32) {
+        bool isValid = bytes4(result) == ERC1271_SUCCESS;
         if (contractCodeLen == 0 && isCounterfactual && !allowSideEffects) {
           // if the call had side effects we need to return the
           // result using a `revert` (to undo the state changes)
           assembly {
-           mstore(0, isValid)
-           revert(31, 1)
+            mstore(0, isValid)
+            revert(31, 1)
           }
         }
-
         return isValid;
-      } catch (bytes memory err) { revert ERC1271Revert(err); }
+      }
     }
 
     // ecrecover verification
