@@ -44,7 +44,23 @@ contract VerifySig {
     }
 
     if (contractCode.length > 0) {
-      return IERC1271Wallet(_signer).isValidSignature(_hash, _signature) == ERC1271_SUCCESS;
+      (bool success, bytes memory result) = _signer.staticcall(
+        abi.encodeWithSelector(
+          ERC1271_SUCCESS, // function selector for isValidSignature, it's the same as success
+          _hash,
+          _signature
+        )
+      );
+
+      // @no-reverts
+      // if the call is a success (did not revert)
+      // and isValidSignature returned a valid result, return the res to the UI
+      // However, if the contract reverted or it does not implement the method,
+      // fallback to ecrecover as it might be an EOA that has a hacked
+      // delegation but ecrecover should be working for
+      if (success && result.length == 32) {
+        return bytes4(result) == ERC1271_SUCCESS;
+      }
     }
 
     // ecrecover verification
